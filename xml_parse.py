@@ -1,36 +1,45 @@
 #!/usr/bin/env python3
-"""XML parser, formatter, and XPath-like query tool."""
-import sys, xml.etree.ElementTree as ET, json
-
-def to_dict(elem):
-    d = {'tag': elem.tag}
-    if elem.attrib: d['attrs'] = dict(elem.attrib)
-    if elem.text and elem.text.strip(): d['text'] = elem.text.strip()
-    children = [to_dict(c) for c in elem]
-    if children: d['children'] = children
-    return d
-
-def query(root, path):
-    results = root.findall(path)
-    for r in results:
-        text = r.text.strip() if r.text else ''
-        attrs = ' '.join(f'{k}="{v}"' for k,v in r.attrib.items())
-        print(f"<{r.tag}{' '+attrs if attrs else ''}> {text}")
-    return results
-
-def fmt(filename, indent=2):
-    ET.indent(ET.parse(filename).getroot(), space=' '*indent)
-    ET.dump(ET.parse(filename).getroot())
-
-if __name__ == '__main__':
-    if len(sys.argv) < 2: print("Usage: xml_parse.py <file.xml> [json|query <xpath>|format]"); sys.exit(1)
-    if len(sys.argv) == 2 or sys.argv[2] == 'json':
-        tree = ET.parse(sys.argv[1])
-        print(json.dumps(to_dict(tree.getroot()), indent=2))
-    elif sys.argv[2] == 'query':
-        tree = ET.parse(sys.argv[1])
-        query(tree.getroot(), sys.argv[3])
-    elif sys.argv[2] == 'format':
-        tree = ET.parse(sys.argv[1])
-        ET.indent(tree.getroot())
-        ET.dump(tree.getroot())
+"""xml_parse - Minimal XML parser to dict/JSON."""
+import sys,re,json
+class XMLNode:
+    def __init__(s,tag="",attrs=None):s.tag=tag;s.attrs=attrs or{};s.children=[];s.text=""
+    def to_dict(s):
+        d={}
+        if s.attrs:d["@"+k]=v for k,v in s.attrs.items()
+        if s.text.strip():
+            if not s.children:return s.text.strip()
+        child_d={}
+        for c in s.children:
+            cd=c.to_dict()
+            if c.tag in child_d:
+                if not isinstance(child_d[c.tag],list):child_d[c.tag]=[child_d[c.tag]]
+                child_d[c.tag].append(cd)
+            else:child_d[c.tag]=cd
+        return child_d or s.text.strip()
+def parse_xml(text):
+    text=re.sub(r"<!--.*?-->","",text,flags=re.DOTALL)
+    tokens=re.findall(r"<[^>]+>|[^<]+",text)
+    stack=[];root=None
+    for t in tokens:
+        if t.startswith("</"):
+            if stack:
+                node=stack.pop()
+                if stack:stack[-1].children.append(node)
+                else:root=node
+        elif t.startswith("<"):
+            m=re.match(r"<(\w+)(.*?)(/?)>",t,re.DOTALL)
+            if m:
+                tag=m[1];attrs=dict(re.findall(r'(\w+)=["']([^"']*)["']',m[2]))
+                node=XMLNode(tag,attrs)
+                if m[3]:
+                    if stack:stack[-1].children.append(node)
+                    else:root=node
+                else:stack.append(node)
+        else:
+            if stack:stack[-1].text+=t
+    return root
+if __name__=="__main__":
+    if len(sys.argv)<2:text=sys.stdin.read()
+    else:text=open(sys.argv[1]).read()
+    root=parse_xml(text)
+    if root:print(json.dumps({root.tag:root.to_dict()},indent=2))

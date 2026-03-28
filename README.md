@@ -1,8 +1,11 @@
 # xml-parse
-XML parser, query, and formatter. Zero dependencies.
+
+Minimal XML parser to dict/JSON.""".
+
+Zero dependencies. Python 3.8+.
+
 ## Usage
+
 ```bash
-python3 xml_parse.py data.xml
-python3 xml_parse.py data.xml query ".//item[@id]"
-python3 xml_parse.py data.xml format
+python3 xml_parse.py --help
 ```
