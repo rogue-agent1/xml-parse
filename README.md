@@ -1,9 +1,11 @@
-# xml-parser
+# xml_parse
 
-Simple XML parser and DOM builder. Single-file Python CLI, zero dependencies.
+xml_parse: Minimal XML parser (no dependencies).
+
+Single-file, zero-dependency Python CLI.
 
 ## Usage
 
 ```bash
-python3 xml_parse.py
+python3 xml_parse.py test
 ```
