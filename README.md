@@ -1,11 +1,6 @@
 # xml_parse
-
-xml_parse: Minimal XML parser (no dependencies).
-
-Single-file, zero-dependency Python CLI.
-
+Single-file Python CLI tool. Zero dependencies, Python 3.8+.
 ## Usage
-
 ```bash
-python3 xml_parse.py test
+python3 xml_parse.py --test
 ```

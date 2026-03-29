@@ -1,109 +1,111 @@
 #!/usr/bin/env python3
-"""xml_parse: Minimal XML parser (no dependencies)."""
-import re, sys
+"""xml_parse - Simple XML parser and builder (no dependencies)."""
+import sys, re
 
-class Element:
+class XMLNode:
     def __init__(self, tag, attrs=None, children=None, text=""):
-        self.tag = tag; self.attrs = attrs or {}
-        self.children = children or []; self.text = text
+        self.tag = tag
+        self.attrs = attrs or {}
+        self.children = children or []
+        self.text = text
 
     def find(self, tag):
         for c in self.children:
-            if c.tag == tag: return c
+            if c.tag == tag:
+                return c
         return None
 
     def find_all(self, tag):
         return [c for c in self.children if c.tag == tag]
 
-    def get(self, attr, default=None):
-        return self.attrs.get(attr, default)
+    def get_text(self):
+        if self.text:
+            return self.text
+        return "".join(c.get_text() for c in self.children)
 
-    def __repr__(self):
-        return f"<{self.tag} {self.attrs}>{self.text}</{self.tag}>"
+    def to_xml(self, indent=0):
+        sp = "  " * indent
+        attrs_str = "".join(f' {k}="{v}"' for k, v in self.attrs.items())
+        if not self.children and not self.text:
+            return f"{sp}<{self.tag}{attrs_str}/>"
+        inner = ""
+        if self.text:
+            inner = self.text
+        elif self.children:
+            inner = "\n" + "\n".join(c.to_xml(indent + 1) for c in self.children) + f"\n{sp}"
+        return f"{sp}<{self.tag}{attrs_str}>{inner}</{self.tag}>"
 
-def parse(xml):
-    xml = xml.strip()
-    # Remove XML declaration
-    xml = re.sub(r'<\?xml[^?]*\?>', '', xml).strip()
-    return _parse_element(xml, 0)[0]
+def parse_xml(text):
+    text = text.strip()
+    if text.startswith("<?"):
+        text = text[text.index("?>") + 2:].strip()
+    return _parse_element(text, 0)[0]
 
-def _parse_element(xml, pos):
-    # Skip whitespace
-    while pos < len(xml) and xml[pos] in ' \t\n\r': pos += 1
-    if xml[pos] != '<': raise ValueError(f"Expected '<' at {pos}")
-    # Parse opening tag
-    end = xml.index('>', pos)
-    tag_content = xml[pos+1:end]
-    self_closing = tag_content.endswith('/')
-    if self_closing: tag_content = tag_content[:-1]
-    parts = tag_content.split(None, 1)
-    tag = parts[0]
+def _parse_element(text, pos):
+    while pos < len(text) and text[pos].isspace():
+        pos += 1
+    assert text[pos] == "<"
+    pos += 1
+    tag_end = pos
+    while text[tag_end] not in (" ", ">", "/"):
+        tag_end += 1
+    tag = text[pos:tag_end]
+    pos = tag_end
     attrs = {}
-    if len(parts) > 1:
-        for m in re.finditer(r'(\w+)=["\'](.*?)["\']', parts[1]):
+    while pos < len(text) and text[pos] not in (">", "/"):
+        if text[pos].isspace():
+            pos += 1
+            continue
+        m = re.match(r'(\w+)="([^"]*)"', text[pos:])
+        if m:
             attrs[m.group(1)] = m.group(2)
-    if self_closing:
-        return Element(tag, attrs), end + 1
-    pos = end + 1
+            pos += m.end()
+        else:
+            pos += 1
+    if text[pos:pos+2] == "/>":
+        return XMLNode(tag, attrs), pos + 2
+    pos += 1  # skip >
     children = []
-    text_parts = []
-    while pos < len(xml):
-        # Skip whitespace
-        while pos < len(xml) and xml[pos] in ' \t\n\r': pos += 1
-        if pos >= len(xml): break
-        if xml[pos:pos+2] == '</':
-            close_end = xml.index('>', pos)
-            break
-        elif xml[pos] == '<':
-            child, pos = _parse_element(xml, pos)
+    text_content = []
+    while pos < len(text):
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+        if text[pos:pos+2] == "</":
+            close_end = text.index(">", pos)
+            pos = close_end + 1
+            node = XMLNode(tag, attrs, children, "".join(text_content).strip())
+            return node, pos
+        if text[pos] == "<":
+            child, pos = _parse_element(text, pos)
             children.append(child)
         else:
-            text_end = xml.index('<', pos)
-            text_parts.append(xml[pos:text_end].strip())
-            pos = text_end
-    else:
-        close_end = pos
-    text = " ".join(t for t in text_parts if t)
-    return Element(tag, attrs, children, text), close_end + 1
-
-def to_xml(elem, indent=0):
-    prefix = "  " * indent
-    attrs = "".join(f' {k}="{v}"' for k, v in elem.attrs.items())
-    if not elem.children and not elem.text:
-        return f"{prefix}<{elem.tag}{attrs}/>"
-    parts = [f"{prefix}<{elem.tag}{attrs}>"]
-    if elem.text: parts.append(f"{prefix}  {elem.text}")
-    for c in elem.children:
-        parts.append(to_xml(c, indent + 1))
-    parts.append(f"{prefix}</{elem.tag}>")
-    return "\n".join(parts)
+            j = pos
+            while j < len(text) and text[j] != "<":
+                j += 1
+            text_content.append(text[pos:j])
+            pos = j
+    return XMLNode(tag, attrs, children, "".join(text_content).strip()), pos
 
 def test():
     xml = '<root><item id="1">Hello</item><item id="2">World</item></root>'
-    elem = parse(xml)
-    assert elem.tag == "root"
-    assert len(elem.children) == 2
-    assert elem.children[0].tag == "item"
-    assert elem.children[0].attrs["id"] == "1"
-    assert elem.children[0].text == "Hello"
-    assert elem.find("item").text == "Hello"
-    assert len(elem.find_all("item")) == 2
-    # Self-closing
-    xml2 = '<root><br/><hr/></root>'
-    elem2 = parse(xml2)
-    assert len(elem2.children) == 2
-    assert elem2.children[0].tag == "br"
-    # Attributes
-    xml3 = '<a href="http://x" class="link">click</a>'
-    elem3 = parse(xml3)
-    assert elem3.get("href") == "http://x"
-    assert elem3.text == "click"
-    # to_xml
-    output = to_xml(elem)
-    assert "<root>" in output
-    assert "</root>" in output
+    doc = parse_xml(xml)
+    assert doc.tag == "root"
+    assert len(doc.children) == 2
+    assert doc.children[0].attrs["id"] == "1"
+    assert doc.children[0].text == "Hello"
+    items = doc.find_all("item")
+    assert len(items) == 2
+    first = doc.find("item")
+    assert first.text == "Hello"
+    empty = parse_xml("<empty/>")
+    assert empty.tag == "empty"
+    assert empty.children == []
+    nested = parse_xml("<a><b><c>deep</c></b></a>")
+    assert nested.find("b").find("c").text == "deep"
+    out = doc.to_xml()
+    assert "<root>" in out
+    assert 'id="1"' in out
     print("All tests passed!")
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "test": test()
-    else: print("Usage: xml_parse.py test")
+    test() if "--test" in sys.argv else print("xml_parse: XML parser. Use --test")
